@@ -1,3 +1,5 @@
+#define FACTORY_PRESET_COUNT 0
+#define USER_PRESET_COUNT 128
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 #define FELUCCA_FAVORITES 1

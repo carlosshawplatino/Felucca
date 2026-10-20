@@ -452,6 +452,42 @@ static int up_rename(uint32_t k, const char *name) { return up_rename_cat(k, nam
 /* slot k -> the selected part's sound: engine and every parameter except the track's own (param_kept:
  * the mix, ARP, SCL, the pattern parameters, the SLICER). The steps stay: the record's pattern is
  * loaded only from SAVE > PHRASES (up_pat_load). 0 ok, 1 empty */
+static int up_load_to(track_t *t, uint32_t k)
+{
+    const up_rec_t *r;
+    int16_t v[P_COUNT];
+    uint32_t i;
+    if (!up_used(k))
+        return 1;
+    r = up_rec(k);
+    up_values(r, v);
+    load_begin(t, UNDO_SOUND);
+    panic_req |= (uint8_t)(1u << trk_index(t));
+#if !FELUCCA_FM4
+    if (r->engine == ENGI_DIGITAL) {
+        int16_t p[P_COUNT];
+        for (i = 0; i < P_COUNT; i++)
+            p[i] = param_kept(i) ? t->p[i] : v[i];
+        fm4_apply(t, p);
+    } else
+#endif
+    {
+        fm1_irq_off();
+        t->eng_req = r->engine;
+        for (i = 0; i < P_COUNT; i++)
+            if (!param_kept(i))
+                t->p[i] = v[i];
+        t->preset = 0;
+        fm1_irq_on();
+        upf_track_load(t, k);
+    }
+    t->user = (uint8_t)(k + 1u);
+    load_end(t);
+    sync_reload = 1;
+    ui.force = 1;
+    return 0;
+}
+
 static int up_load(uint32_t k)
 {
     const up_rec_t *r;

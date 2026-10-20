@@ -9,7 +9,8 @@ static void panel_setup(void);
 static void project_load(uint32_t slot);
 static int project_used(uint32_t slot);
 static uint32_t chain_prepare(void);
-static int up_used(uint32_t k);              /* user presets: upreset.c */
+static int up_used(uint32_t k);
+static void set_engine_of(track_t *t, uint32_t ei);              /* user presets: upreset.c */
 static int up_load(uint32_t k);
 static uint32_t up_count(void);
 static uint32_t up_nth(uint32_t n);
@@ -1457,34 +1458,41 @@ static void clean_engine(void) { clean_engine_of(TSEL); }
  * then the voice bank's B1..B32 through SLOT as the knob loads them (fm6_poll; the rest of the sound stays), an empty
  * one ignored. A program past the last is ignored, not wrapped: a number is always the same sound */
 static volatile uint8_t *const mpc_io = ui.mpc;
+static uint32_t preset_all_at(uint32_t n, uint32_t *k);
+static int up_load_to(track_t *t, uint32_t k);
+
 static void midi_pc_load(track_t *t, uint32_t n)
 {
-    uint32_t e = t->eng_req % NENGINES, k;
-    if (e == ENGI_DRUM) {
-        const param_desc_t *d = param_desc_of(e, P_E0);
-        for (k = (uint32_t)d->min; k <= (uint32_t)d->max && (enum_orig(d, (int32_t)k) != (int32_t)k || n--); k++)
-            ;
-        if (k <= (uint32_t)d->max)
-            t->p[P_E0] = (int16_t)k;
+    uint32_t k;
+    uint32_t e;
+
+    // Fix: PC 71-102 = U01-U32 (para cualquier secuenciador)
+    if (n >= 71 && n <= 102) {
+        up_load_to(t, n - 71);
         return;
     }
-    if (n >= preset_shown(e)) {
-        int32_t s = (int32_t)(FM6_OWN + 1u + n - preset_shown(e));
-        if (e == ENGI_FM6 && fm6_bank_slot(s) >= 0 && fm6_slot_ok(s))
-            t->p[P_E7] = (int16_t)s;
+    if (n >= 103) {
+        up_load_to(t, (n - 71) % 32);
         return;
     }
-    for (k = 0; preset_orig(ENGINES[e], k) != k || n--; k++)   /* the n-th shown preset */
-        ;
+
+    e = preset_all_at(n, &k);
+    if (e == NENGINES) {
+        up_load_to(t, k);
+        return;
+    }
+    if (e != (t->eng_req % NENGINES))
+        set_engine_of(t, e);
     apply_preset_to(t, k);
 }
-static void midi_pc_poll(void)                       /* main loop (ui_input) */
+
+static void midi_pc_poll(void)
 {
     uint32_t k, v;
     for (k = 0; k < NTRK; k++) {
         if (!ui.mpc[k])
             continue;
-        fm1_irq_off();                               /* (the ISR may note another meanwhile) */
+        fm1_irq_off();
         v = ui.mpc[k];
         ui.mpc[k] = 0;
         fm1_irq_on();
@@ -1492,6 +1500,7 @@ static void midi_pc_poll(void)                       /* main loop (ui_input) */
         ui.force = 1;
     }
 }
+
 
 static void track_defaults(track_t *t)
 {
